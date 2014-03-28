@@ -16,7 +16,6 @@ role :postgres do
         createuser '--pwprompt', '--no-createdb', '--no-superuser',
           '--no-createrole', 'jepsen', stdin: "jepsen\njepsen\n", echo: true
         createdb '--owner=jepsen', 'jepsen', echo: true
-      rescue
       end
     end
   end

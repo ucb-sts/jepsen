@@ -4,6 +4,7 @@
             [jepsen.control.net :as control.net]
             [jepsen.console :as console]
             [jepsen.failure :as failure]
+            [jepsen.ddmin :as ddmin]
             [clojure.java.io :as io])
   (:use jepsen.load
         jepsen.util)
@@ -101,15 +102,19 @@
 (defn worker
   "Runs a workload in a new future. Returns a log of all the write operations."
   [r app workload]
-  (future
-    (map-fixed-rate r
-                    (->> app
-                         (partial add)
-                         wrap-catch
-                         wrap-latency
-                         wrap-record-req
-                         console/wrap-ordered-log)
-                    workload)))
+  ; TODO(cs): probably a better way to do this:
+  (let [bound-wrap-app (partial wrap-app app)]
+    (future
+      (map-fixed-rate r
+                      (->> app
+                           (partial add)
+                           wrap-catch
+                           wrap-timestamp
+                           wrap-latency
+                           bound-wrap-app
+                           wrap-record-req
+                           console/wrap-ordered-log)
+                      workload))))
 
 (defn apps
   "Returns a set of apps for testing, given a function."
@@ -121,30 +126,43 @@
                  })
        nodes))
 
-(defn run [r n failure-mode apps]
+(defn init-apps [apps]
   ; Set up apps
   (control/on-many nodes (control.net/heal))
   ; Destroys nuodb
-  (dorun (map setup apps))
+  (dorun (map setup apps)))
+
+(defn filter-acked [log]
+  (->> log
+    (remove nil?)
+    (remove #(= :error (:state %)))
+    (map :req)))
+
+(defn run [r n failure-mode apps minimize]
+  (init-apps apps)
+  (println apps)
 
   ; Divide work and start workers
   (let [t0 (System/currentTimeMillis)
         elements (range n)
         duration (/ n r (count nodes))
         _ (log "Run will take" duration "seconds")
+        failure_delay_seconds (min 10 (* 1/4 duration))
+        recovery_delay_seconds (* 1/2 duration)
         witch (failure/schedule! failure-mode
                                  nodes
-                                 (min 10 (* 1/4 duration))
-                                 (* 1/2 duration))
+                                 failure_delay_seconds
+                                 recovery_delay_seconds)
+        _ (println witch)
         workloads (partition-rr (count apps) elements)
+        _ (println workloads)
         log (->> (map (partial worker r) apps workloads)
                  doall
                  (mapcat deref)
                  (sort-by :req))
-        acked (->> log
-                   (remove nil?)
-                   (remove #(= :error (:state %)))
-                   (map :req))
+        _ (println log)
+        acked (filter-acked log)
+        _ (println acked)
         t1 (System/currentTimeMillis)]
 
     ; Spit out logfile
@@ -156,20 +174,46 @@
     (println (count (filter nil? log)) "unrecoverable timeouts")
 
     ; Wait for recovery to complete
-    @witch
+    (println @witch)
 
-    
     ; Get results
 ;   (println "Hit enter when ready to collect results.")
 ;   (read-line0)
 ;   (sleep 10000)
 
     (println "Collecting results.")
-    (let [results (results (first apps))]
+    (let [get-results results
+          results (results (first apps))]
       (println "Writes completed in" (float (/ (- t1 t0) 1000)) "seconds")
+      (println elements)
+      (println acked)
+      (println results)
       (print-results elements acked results)
 
       ; Shut down apps
       (dorun (map teardown apps))
+
+      ; Invoke delta debugging
+      (when minimize
+        (let [; TODO(cs): make easy to specify other invariants
+              invariant ddmin/all-writes-succeed
+              ddtest (partial ddmin/replay
+                              invariant
+                              init-apps
+                              apps
+                              nodes
+                              failure-mode
+                              ; TODO(cs): need to log individual failure events for chaos mode.
+                              failure_delay_seconds
+                              recovery_delay_seconds
+                              ; TODO(cs): there has got to be a better way to
+                              ; pass the Protocol's "results" and "teardown"
+                              ; functions
+                              get-results
+                              teardown
+                              add)]
+          (when (not (invariant elements acked results))
+            (println (ddmin/ddmin ddtest log)))))
+
       results
       nil)))

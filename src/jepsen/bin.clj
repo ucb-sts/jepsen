@@ -68,6 +68,7 @@
        ["-p" "--password" "password for sudo invocations"]
        ["-k" "--key_path" "path to private ssh key"]
        ["-t" "--port" "port to use if not using the default"]
+       ["-m" "--minimize" "whether to minimize failing traces"]
        ))
 
 (defn -main
@@ -84,6 +85,7 @@
           pw    (get opts :password nil)
           private-key-path (get opts :key_path nil)
           port  (get opts :port nil)
+          minimize (get opts :minimize false)
           ]
 
       (when (empty? app-names)
@@ -95,10 +97,10 @@
       (with-redefs [jepsen.control/*password* pw
                     jepsen.control/*username* uname
                     jepsen.control/*private-key-path* private-key-path]
-        (let [app-fn (->> app-names
+                   (let [app-fn (->> app-names
                           (map app-map)
-                          (apply comp))] 
-          (run r n failure (apps app-fn port spex))
+                          (apply comp))]
+          (run r n failure (apps app-fn port spex) minimize)
           (System/exit 0))
         ))
 

@@ -90,6 +90,14 @@
         (log "Timed out waiting for some tasks to complete!")
         @output))))
 
+(defn wrap-timestamp
+  "Returns a function which takes an argument and calls (f arg). (f arg) should
+  return a map. Wrap-timestamp will add a new key :start_epoch to this map, which is 
+  the epoch in milliseconds when this call was invoked."
+  [f]
+  (fn add-timestamp [req]
+    (assoc (f req) :start_epoch (System/currentTimeMillis))))
+
 (defn wrap-latency
   "Returns a function which takes an argument and calls (f arg). (f arg) should
   return a map. Wrap-time will add a new key :latency to this map, which is the
@@ -113,6 +121,12 @@
          :message (str (.getMessage t) "\n"
                        (with-out-str
                          (trace/print-cause-trace t)))}))))
+
+(defn wrap-app
+  "Returns a function that calls (f req), then assoc's :app app onto the result"
+  [app f]
+  (fn assoc-app [req]
+    (assoc (f req) :app app)))
 
 (defn wrap-log
   "Returns a function that calls (f req), then logs the req and return value."
