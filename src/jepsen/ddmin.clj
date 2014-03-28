@@ -1,5 +1,7 @@
 (ns jepsen.ddmin
-  (:require [jepsen.failure :as failure])
+  (:require [jepsen.failure :as failure]
+            [jepsen.util :as util]
+            [jepsen.console :as console])
   (:use jepsen.load))
 
 ; ----- Invariants -----
@@ -7,10 +9,10 @@
 ;  TODO(cs): probably need specific failure signatures rather than general
 ;            invariant failures
 (defn all-writes-succeed [target acked results]
-  (= target results))
+  (= (set target) (set results)))
 
 (defn all-acked-writes-succeed [target acked results]
-  (= acked results))
+  (= (set acked) (set results)))
 
 ; ----- delta debugging functions -----
 
@@ -23,14 +25,39 @@
     (map :req)))
 
 (defn replay-worker
-  [add app]
+  [add min-epoch app log-chunk]
   (future
-    (->> app
-         (partial add)
-         wrap-catch
-         ; TODO(cs): extract timestamp, sleep N seconds
-         ; 
-         )))
+    (let [emit (->> app
+                   (partial add)
+                   wrap-catch
+                   wrap-timestamp
+                   wrap-latency
+                   wrap-record-req
+                   console/wrap-ordered-log)
+          result (atom [])
+          last-timestamp-ms (atom min-epoch)
+          reqs (atom log-chunk)]
+      (while (> (count @reqs) 0)
+        (let [req (first @reqs)
+              sleep-ms (- (:start_epoch req) @last-timestamp-ms)]
+          ; TODO(cs): account for the time it takes to emit?
+          (util/sleep sleep-ms)
+          (reset! last-timestamp-ms (:start_epoch req))
+          (swap! result conj (emit (:element req)))
+          (swap! reqs rest)
+        ))
+     @result)
+   ))
+
+(defn create-workers [add log]
+  ; log has the form ({:req 0, :latency 31.387917, :element 0, :id 1 :app app}...)
+  ; partition into a list of replay-workers, one for each app.
+  (let [extract-app (fn [lst] (:app (first lst)))
+        log-chunks (partition-by (comp str :app) (sort-by (comp str :app) log))
+        apps (map extract-app log-chunks)
+        min-epoch (apply min (map :start_epoch log))]
+    (map (partial replay-worker add min-epoch) apps log-chunks)
+  ))
 
 (defn replay [invariant
               init-apps
@@ -45,18 +72,21 @@
               log]
   (init-apps apps)
 
-  (let [witch (failure/schedule! failure-mode
+  (let [; All keys we tried to write
+        target (set (map :element log))
+        _ (util/ordered-println "Replaying" target)
+        witch (failure/schedule! failure-mode
                                  nodes
                                  failure_delay_seconds
                                  recovery_delay_seconds)
-        ; log has the form ({:req 0, :latency 31.387917, :element 0, :id 1 :app app}...)
-        ; TODO(cs): where are :element and :id added?
-        new_log '()
-        target (set (map :element log)) ; All keys we tried to write
-        acked (filter-acked new_log)]
+        new-log (->> (create-workers add log)
+                     doall
+                     (mapcat deref)
+                      (sort-by :req))
+        acked (filter-acked new-log)]
 
     ; Wait for recovery to complete
-    (println @witch)
+    (util/ordered-println @witch)
     (let [results (get-results (first apps))]
       ; Shut down apps
       (dorun (map teardown apps))
@@ -65,7 +95,7 @@
     )))
 
 (defn splitlog [log]
-  (split-at (int (/ (count log) 2))) log)
+  (split-at (int (/ (count log) 2)) log))
 
 (defn joinlogs [l1 l2]
   (sort-by :start_epoch (concat l1 l2)))
@@ -74,21 +104,29 @@
   "Precondition: (not (test log)), i.e. log produces an invariant violation"
   (if (= (count log) 1)
     ; Base case
-    log
+    (do
+      (util/ordered-println "base case")
+      log)
     ; Recursive cases
     (let [split (splitlog log)
           l1 (first split)
           l2 (second split)]
       (cond
         ; "in T1"
-        (ddtest (joinlogs l1 remainder)) (ddmin2 ddtest l1 remainder)
+        (ddtest (joinlogs l1 remainder)) (do
+          (util/ordered-println "in T1")
+          (ddmin2 ddtest l1 remainder))
         ; "in T2"
-        (ddtest (joinlogs l2 remainder)) (ddmin2 ddtest l2 remainder)
+        (ddtest (joinlogs l2 remainder)) (do
+           (util/ordered-println "in T2")
+           (ddmin2 ddtest l2 remainder))
         ; "interference"
-        :else (joinlogs
-                (ddmin2 l1 (joinlogs l2 remainder))
-                (ddmin2 l2 (joinlogs l1 remainder))))
-      )))
+        :else (do
+           (util/ordered-println "interference")
+           (joinlogs
+             (ddmin2 ddtest l1 (joinlogs l2 remainder))
+             (ddmin2 ddtest l2 (joinlogs l1 remainder))))
+      ))))
 
 (defn ddmin [ddtest log]
-  (ddmin2 ddtest (sort-by :start_epoch) []))
+  (ddmin2 ddtest (sort-by :start_epoch log) []))

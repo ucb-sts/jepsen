@@ -212,6 +212,7 @@
                               get-results
                               teardown
                               add)]
+          (println "Init Invariant:" (invariant elements acked results))
           (when (not (invariant elements acked results))
             (println (ddmin/ddmin ddtest log)))))
 

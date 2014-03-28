@@ -10,6 +10,11 @@
       [& things]
       (apply send-off logger log-print things))
 
+(defn ordered-println
+  [& things]
+  (locking *out*
+    (apply println things)))
+
 ;(defn all-loggers []
 ;  (->> (org.apache.log4j.LogManager/getCurrentLoggers)
 ;       (java.util.Collections/list)
