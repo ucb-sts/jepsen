@@ -4,7 +4,7 @@
                            [org.clojure/data.fressian "0.2.0"]
                            [clj-time "0.6.0"]
                            [aleph "0.3.0-beta16"]
-                           [knossos "0.1.1-SNAPSHOT"]
+                           [knossos "0.1.0"]
                            [clj-ssh "0.5.7"]
                            [org.clojars.achim/multiset "0.1.0-SNAPSHOT"]
                            [com.novemberain/welle "2.0.0-beta1"]
