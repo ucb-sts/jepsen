@@ -11,13 +11,24 @@
   (let [t (time.local/local-now)]
     (time/minus t (time/millis (time/milli t)))))
 
+(defn op->str
+  "Format an operation as a string."
+  [op]
+  (str (:process op)         \tab
+       (:type op)            \tab
+       (pr-str (:f op))      \tab
+       (pr-str (:value op))))
+
+(defn print-history
+  "Prints a history to the console."
+  [history]
+  (doseq [op history]
+    (println (op->str op))))
+
 (defn log-op
   "Logs an operation."
   [op]
-  (info (:process op)
-        (:type op)
-        (pr-str (:f op))
-        (pr-str (:value op))))
+  (info (op->str op)))
 
 (def logger (agent nil))
 (defn log-print
@@ -81,10 +92,24 @@
 
 (defn nanos->secs [nanos] (/ nanos 1e9))
 
-(defn linear-time-nanos
+(defn ^Long linear-time-nanos
   "A linear time source in nanoseconds."
   []
   (System/nanoTime))
+
+(def ^:dynamic ^Long *relative-time-origin*
+  "A reference point for measuring time in a test run.")
+
+(defmacro with-relative-time
+  "Binds *relative-time-origin* at the start of body."
+  [& body]
+  `(binding [*relative-time-origin* (linear-time-nanos)]
+     ~@body))
+
+(defn relative-time-nanos
+  "Time in nanoseconds since *relative-time-origin*"
+  []
+  (- (linear-time-nanos) *relative-time-origin*))
 
 (defn sleep
   "High-resolution sleep; takes a (possibly fractional) time in ms."
@@ -99,6 +124,19 @@
   `(let [t0# (System/nanoTime)]
     ~@body
      (nanos->ms (- (System/nanoTime) t0#))))
+
+(defmacro timeout
+  "Times out body after n millis, returning timeout-val."
+  [millis timeout-val & body]
+  `(let [thread# (Thread/currentThread)
+         alive# (promise)
+         interrupter# (future
+                        (when (deref alive# ~timeout-val true)
+                          (.interrupt thread#)))
+         res# (do ~@body)]
+     (deliver alive# false)
+     (future-cancel interrupter#)
+     res#))
 
 (defn map-vals
   "Maps values in a map."
