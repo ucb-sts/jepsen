@@ -1,6 +1,23 @@
 (ns jepsen.util
   "Kitchen sink"
+  (:require [clojure.tools.logging :refer [info]]
+            [clj-time.core :as time]
+            [clj-time.local :as time.local])
   (:import (java.util.concurrent.locks LockSupport)))
+
+(defn local-time
+  "Drops millisecond resolution"
+  []
+  (let [t (time.local/local-now)]
+    (time/minus t (time/millis (time/milli t)))))
+
+(defn log-op
+  "Logs an operation."
+  [op]
+  (info (:process op)
+        (:type op)
+        (pr-str (:f op))
+        (pr-str (:value op))))
 
 (def logger (agent nil))
 (defn log-print
@@ -60,6 +77,15 @@
 
 (defn nanos->ms [nanos] (/ nanos 1000000))
 
+(defn secs->nanos [s] (* s 1e9))
+
+(defn nanos->secs [nanos] (/ nanos 1e9))
+
+(defn linear-time-nanos
+  "A linear time source in nanoseconds."
+  []
+  (System/nanoTime))
+
 (defn sleep
   "High-resolution sleep; takes a (possibly fractional) time in ms."
   [dt]
@@ -80,3 +106,17 @@
   (->> m
        (map (fn [[k v]] [k (f v)]))
        (into {})))
+
+(defmacro meh
+  "Returns, rather than throws, exceptions."
+  [& body]
+  `(try ~@body (catch Exception e# e#)))
+
+(defmacro with-thread-name
+  "Sets the thread name for duration of block."
+  [thread-name & body]
+  `(let [old-name# (.. Thread currentThread getName)]
+     (try
+       (.. Thread currentThread (setName (name ~thread-name)))
+       ~@body
+       (finally (.. Thread currentThread (setName old-name#))))))
