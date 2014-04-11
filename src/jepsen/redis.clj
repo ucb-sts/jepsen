@@ -48,7 +48,7 @@
 (defn highest-node
   "Which node has the highest replication offset?"
   [nodes]
-  (log (map repl-offset nodes))
+  (log "mapping repl-offset" (map repl-offset nodes))
   (->> nodes
        (reduce (fn [[highest offset] node]
                  (let [offset' (repl-offset node)]
@@ -177,7 +177,7 @@
 
       (Thread/sleep 5000)
 
-      (log (highest-node nodes)))
+      (log "Highest node" (highest-node nodes)))
 
     (recover [_ nodes]
       ; Recover partition
@@ -188,5 +188,5 @@
       (elect! nodes)
 
       (Thread/sleep 10000)
-      (log (highest-node nodes)))))
+      (log "Highest node" (highest-node nodes)))))
 

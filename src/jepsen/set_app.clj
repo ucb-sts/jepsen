@@ -140,29 +140,29 @@
 
 (defn run [r n failure-mode apps minimize]
   (init-apps apps)
-  (println apps)
+  (println "Apps" apps)
 
   ; Divide work and start workers
   (let [t0 (System/currentTimeMillis)
         elements (range n)
         duration (/ n r (count nodes))
-        _ (log "Run will take" duration "seconds")
+        _ (println "Run will take" duration "seconds")
         failure_delay_seconds (min 10 (* 1/4 duration))
         recovery_delay_seconds (* 1/2 duration)
         witch (failure/schedule! failure-mode
                                  nodes
                                  failure_delay_seconds
                                  recovery_delay_seconds)
-        _ (println witch)
+        _ (println "Witch" witch)
         workloads (partition-rr (count apps) elements)
-        _ (println workloads)
+        _ (println "Workloads" workloads)
         log (->> (map (partial worker r) apps workloads)
                  doall
                  (mapcat deref)
                  (sort-by :req))
-        _ (println log)
+        _ (println "LOG" log)
         acked (filter-acked log)
-        _ (println acked)
+        _ (println "ACKED" acked)
         t1 (System/currentTimeMillis)]
 
     ; Spit out logfile
@@ -174,7 +174,7 @@
     (println (count (filter nil? log)) "unrecoverable timeouts")
 
     ; Wait for recovery to complete
-    (println @witch)
+    (println "@Witch" @witch)
 
     ; Get results
 ;   (println "Hit enter when ready to collect results.")
@@ -185,9 +185,9 @@
     (let [get-results results
           results (results (first apps))]
       (println "Writes completed in" (float (/ (- t1 t0) 1000)) "seconds")
-      (println elements)
-      (println acked)
-      (println results)
+      (println "Elements: " elements)
+      (println "Acked: " acked)
+      (println "Results: " results)
       (print-results elements acked results)
 
       ; Shut down apps

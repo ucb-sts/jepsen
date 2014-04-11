@@ -73,7 +73,7 @@
   (init-apps apps)
 
   (let [; All keys we tried to write
-        target (set (map :element log))
+        target (set (map :req log))
         _ (util/ordered-println "Replaying" target)
         witch (failure/schedule! failure-mode
                                  nodes
@@ -83,12 +83,15 @@
                      doall
                      (mapcat deref)
                       (sort-by :req))
-        acked (filter-acked new-log)]
+        _ (util/ordered-println "New LOG" new-log)
+        acked (filter-acked new-log)
+        _ (util/ordered-println "ACKED" acked)]
 
     ; Wait for recovery to complete
-    (util/ordered-println @witch)
+    (util/ordered-println "@Witch" @witch)
     (let [results (get-results (first apps))]
       ; Shut down apps
+      (util/ordered-println "Results" results)
       (dorun (map teardown apps))
       ; Check and return result of invariant
       (invariant target acked results)
