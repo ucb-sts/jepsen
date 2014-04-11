@@ -43,14 +43,14 @@
           ; TODO(cs): account for the time it takes to emit?
           (util/sleep sleep-ms)
           (reset! last-timestamp-ms (:start_epoch req))
-          (swap! result conj (emit (:element req)))
+          (swap! result conj (emit (:req req)))
           (swap! reqs rest)
         ))
      @result)
    ))
 
 (defn create-workers [add log]
-  ; log has the form ({:req 0, :latency 31.387917, :element 0, :id 1 :app app}...)
+  ; log has the form ({:req 0, :latency 31.387917, :app app}...)
   ; partition into a list of replay-workers, one for each app.
   (let [extract-app (fn [lst] (:app (first lst)))
         log-chunks (partition-by (comp str :app) (sort-by (comp str :app) log))
@@ -82,7 +82,7 @@
         new-log (->> (create-workers add log)
                      doall
                      (mapcat deref)
-                      (sort-by :req))
+                     (sort-by :req))
         _ (util/ordered-println "New LOG" new-log)
         acked (filter-acked new-log)
         _ (util/ordered-println "ACKED" acked)]
