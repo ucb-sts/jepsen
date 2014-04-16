@@ -196,7 +196,7 @@
       ; Invoke delta debugging
       (when minimize
         (let [; TODO(cs): make easy to specify other invariants
-              invariant ddmin/all-writes-succeed
+              invariant ddmin/all-acked-writes-succeed
               ddtest (partial ddmin/replay
                               invariant
                               init-apps
